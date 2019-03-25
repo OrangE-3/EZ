@@ -1,0 +1,230 @@
+Template Code used for EEG data classification.
+
+Data Prep:
+# setting the random seed for reproducibility
+import random
+seed=42
+random.seed(seed)
+
+# import libraries 
+import itertools
+import numpy as np
+import pandas as pd
+from sklearn import preprocessing
+from sklearn.preprocessing import StandardScaler
+
+
+
+Load the Data:
+# eeg1 and events1 are the test data from a single person
+# code assumes eeg1 and events1 are csv files in the current working directory
+
+eeg1 = pd.read_csv("eeg1.csv", delimiter="\t")
+new_columns = eeg1.columns.values 
+print (new_columns)
+new_columns[0] = 'time'     
+new_columns[33] = 'sample' 
+eeg1.columns = new_columns
+
+events1 = pd.read_csv("events1.csv") #, delimiter="\t"
+
+# subsample of the data to ease building the model, unused in final run
+eeg1_smol = eeg1[0:785000]
+events1_smol = events1[0:1000]
+
+# Toy data generator
+def generate_eeg(samples, time_steps, n_features, event_types):
+    # samples is Int number of trials 
+    # time_steps is Int length of each trial in ms
+    # n_features is Int number of EEG channels
+    # event_types is Int number of stimula like lights and flashes
+    signals = generate_signals(samples, time_steps, n_features)
+    events = generate_events(event_types, samples)
+    events_1hot = one_hot_events(events)
+    return signals, events_1hot
+
+# helper function (generate_eeg) for making EEG signal data
+def generate_signals(samples, time_steps, n_features):
+    # data types same as main function
+    signals = np.random.random((samples, time_steps, n_features))
+    return signals
+
+# helper function (generate_eeg) for making one sample per event an
+def generate_events(event_types, samples):
+
+    # data types same as main function
+    events = np.random.randint(1, event_types, samples)
+    return events
+
+# takes in eeg dataframe and event dataframe, cleans them, 1hot encodes the events
+def clean_eeg(eeg, events, event_interval_length, eeg_slice_length):
+    array_list = [] 
+    index_list = []
+    eeg = standardize_eeg(eeg) # function for standardizing the eeg readings
+    
+    # iterate over the rows of the events and slice out the corresponding eeg data
+    for index, row in itertools.islice(events.iterrows(), event_interval_length): 
+        
+        tmin, tmax = build_event_intervals(row, events)
+        eeg_slice = cut_event_intervals(eeg, tmin, tmax)
+        array_list, index_list = build_array(eeg_slice, eeg_slice_length, 
+                                             index, index_list, array_list)
+    y_int = events.iloc[index_list] # take the event types for the correct index
+    y_int = y_int['type'].values    # take just the event types as an array
+    
+    X = np.stack(array_list, axis = 0)   # stack the arrays so the whole thing is 3D
+    return X, y_int                     # return the data, outputs, and the binarizer
+    
+        
+def build_event_list(row, event_list):
+    # helper function to pull event types out of event data in the right order
+    event_type = getattr(row, "type")
+    event_list.append(event_type)
+        
+def build_event_intervals(row, events):
+    # helper function to get the time intervals associated with each event
+    tmin = getattr(row, "latency")
+    tmin_in = getattr(row, "number")
+    tmax_in = tmin_in + 1
+    tmax = events1.loc[tmax_in, "latency"]
+    return tmin, tmax
+
+def cut_event_intervals(eeg, tmin, tmax):
+    # helper function to slice up the eeg data so each slice is associated with one event
+    eeg_slice = eeg.loc[(eeg["time"] > tmin) & (eeg["time"] < tmax)]
+    eeg_slice.drop(["time", "sample"], axis = 1, inplace = True)
+    return eeg_slice
+    
+def build_array(eeg_slice, eeg_slice_length, index, index_list, array_list):
+    # helper function to build an array out of the eeg slices and pad them out to a standard length
+    if len(eeg_slice) < eeg_slice_length:
+        index_list.append(index)
+        eeg_matrix = eeg_slice.as_matrix()
+        padded_matrix = np.pad(eeg_matrix, ((0, eeg_slice_length - len(eeg_matrix)), (0,0)),
+                                   'constant', constant_values=0)
+        array_list.append(padded_matrix)
+    return array_list, index_list
+
+def one_hot_events(events):
+    # helper function for one-hot encoding the events
+    events_list = list(events)
+    lb = preprocessing.LabelBinarizer()
+    lb.fit(events_list)
+    events_1hot = lb.transform(events_list)
+    return events_1hot, lb
+
+def invert_one_hot(events, lb):
+    # function for decoding one-hot, binarizer made in one_hot_events
+    inv_events = lb.inverse_transform(events)
+    return inv_events
+
+def standardize_eeg(eeg_data):
+    # breaks apart an eeg dataframe, scales the eeg readings, and reassmbles it into a dataframe
+    column_list = eeg_data.columns[1:33]
+    time = eeg_data['time']
+    sample = eeg_data['sample']
+    eeg_array = eeg_data[column_list]
+    eeg_stnd = scale_data(eeg_array)
+    eeg_stnd_df = pd.DataFrame(eeg_stnd, index=eeg_data.index, columns=column_list)
+    eeg_stnd = pd.concat([time, eeg_stnd_df, sample], axis =1)
+    return eeg_stnd
+
+def scale_data(unscaled_data):
+    # helper function for standardize_eeg, fits a scaler and transforms the data 
+    scaler = StandardScaler()
+    scaler.fit(unscaled_data)
+    scaled_data = scaler.transform(unscaled_data)
+    return scaled_data
+
+# This is unused code for breaking up the "nothing happened" periods of the eeg data 
+# to associate with "type 0" events. 
+
+import math
+time_steps = 1300
+
+def build_zero_events(event_data, time_steps=time_steps):
+    new_events = build_new_events(event_data, time_steps)
+    events = zero_events(event_data, new_events)
+    return events
+
+
+def build_new_events(event_data, time_steps= time_steps):
+    first_event_time = event_data['latency'].loc[1]
+    number_new_intervals = math.floor(first_event_time / time_steps)
+    df = pd.DataFrame(columns=['number', 'latency', 'type', 'duration'],index = range(number_new_intervals) )
+    latency = 0
+    for t in range(number_new_intervals):
+        latency += 1300
+        df.loc[t].latency = latency
+        df.loc[t].type = 0
+    return df
+
+def zero_events(event_data, new_events):
+    events_zeros = event_data[event_data.latency != 1]
+    events_zeros= new_events.append(events_zeros)
+    events_zeros = events_zeros.reset_index(drop=True)
+    events_zeros['number'] = events_zeros.index + 1
+    return events_zeros
+
+
+
+
+Model:
+# full dataset parameters
+# define model parameters
+samples = 3625  # how many trials of eeg data
+n_features = 32  # how many channels of eeg in each sample
+time_steps = 1300 # how many ms was each sample run for
+event_types = 2 #len(set(y))  # how many different event types (light, sound, etc) are there # 6 large, 4 smol
+
+# get the data into useable form and store as X and y
+X, y = clean_eeg(eeg1, events1, samples, time_steps)  #4250 long, 998 short, 4330 long enhanced
+
+# removes the minor event types. There were only a couple hundred examples of each, whereas the used events had a 
+# couple thousand examples
+remove_list = [0,2,4,5,6]              # designate unwanted event types
+drop_list = np.isin(y, remove_list)    # create a list of indices associated with unwanted events                  
+drop_array = np.array(drop_list)       # make the list of indices to drop into an array
+
+# make X, y's with the unwanted events removed
+y_short_int = y[np.isin(y,remove_list, invert=True)]
+X_short = X[np.isin(y, remove_list, invert=True)]
+
+# one hot encode the y data without the unwanted events
+y_short, lb = one_hot_events(y_short_int)
+
+from sklearn.model_selection import StratifiedShuffleSplit
+
+# use strat. shuffle split to get indices for test and training data 
+sss = StratifiedShuffleSplit(n_splits=2, test_size=0.2, random_state=seed)
+sss.get_n_splits(X_short, y_short)
+
+# take the indices generated by stratified shuffle split and make the test and training datasets
+for train_index, test_index in sss.split(X_short, y_short):
+    
+    X_train, X_test = X_short[train_index], X_short[test_index]
+    y_train, y_test = y_short[train_index], y_short[test_index]
+
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
+from keras.layers import Embedding
+from keras.layers import LSTM
+
+
+# code for building an LSTM with 100 neurons and dropout. Runs for 50 epochs
+
+model = Sequential()
+model.add(LSTM(100, return_sequences=False, input_shape=(time_steps, n_features)))
+model.add(Dropout(0.5))
+model.add(Dense(1, activation='sigmoid'))
+
+model.compile(loss='binary_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+model.fit(X_train, y_train, batch_size=16, epochs=50)
+score = model.evaluate(X_test, y_test, batch_size=16)
+
+score
+
+print("Accuracy: %.2f%%" % (score[1]*100))
