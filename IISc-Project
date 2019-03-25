@@ -1,0 +1,106 @@
+MATLAB Code prepared for Analysis of magnetic field around the prototype.
+
+
+A.1. Magnetic Field Around the Micro-Coil
+
+
+1.	f=inline('(((I*R)*(R-x*sin(p))))*((((R.^2)+(x.^2)-(2*x*R*sin(p))).^-1.5))', 'x','p','R','I');
+2.	x=linspace(0,500e-6,1000);
+3.	A=ones(1,1000);
+
+4.	%Magnetic Field of a single current loop (150 micrometer),0.1A
+5.	for t=1:1000
+6.	A(t)= integral(@(p) f(x(t),p,75e-6,0.1), 0, 2*pi,'ArrayValued', true);
+7.	end
+8.	plot(x,A)
+
+9.	J=ones(1,1000);
+10.	J=A*1e-7;
+11.	plot(x,J)
+
+12.	%Magnetic Field of the coil (0.15A)
+13.	for t=1:1000
+
+14.	AA(t) =  integral(@(p) f(x(t),p,75e-6,0.1), 0, 2*pi,'ArrayValued', true)  +  integral(@(p) f(x(t),p,65e-6,0.1), 0,
+
+15.	2*pi,'ArrayValued', true)  +  integral(@(p) f(x(t),p,55e-6,0.1), 0, 2*pi,'ArrayValued', true)  +  integral(@(p)
+
+16.	f(x(t),p,45e-6,0.1), 0, 2*pi,'ArrayValued', true) +  integral(@(p) f(x(t),p,35e-6,0.1), 0, 2*pi,'ArrayValued', true)  +
+
+17.	integral(@(p) f(x(t),p,25e-6,0.1), 0, 2*pi,'ArrayValued', true)  +  integral(@(p) f(x(t),p,15e-6,0.1), 0,
+
+18.	2*pi,'ArrayValued', true);
+
+19.	end
+
+20.	JJ=AA*1e-7;
+21.	S=JJ*1.5;
+22.	plot(x,S)
+
+23.	%For storing the values of variables
+24.	B_Values_Of_150um_COIL=S;
+25.	Distance_from_centre=x;
+26.	Current=I;
+
+27.	%For removing the field of inside the wire which are not required
+28.	S(26:36)=0;
+29.	S(46:56)=0;
+30.	S(66:76)=0;
+31.	S(86:96)=0;
+32.	S(106:116)=0;
+33.	S(126:136)=0;
+34.	S(146:156)=0;
+35.	plot(x,S)
+
+36.	g = @(x,R,I) integral(@(p) f(x,p,R,I), 0, 2*pi,'ArrayValued', true)
+
+37.	%Storing values of x, xx
+38.	X=x;
+39.	XX=xx;
+
+40.	%For seeing the inline function properly
+41.	syms p R I x
+42.	i= inline2sym(f)
+43.	pretty(i)
+
+44.	D=fliplr(S);
+45.	E=cat(2,D,S);
+46.	plot(C,E)
+
+47.	F=fliplr( -Distance_from_centre);
+48.	C=cat(2 ,F,Distance_from_centre);
+
+49.	%Magnitude of Field around the Coil
+50.	K=abs(E);
+51.	plot(C,K)
+
+
+
+A.2. Magnetic Field Around the Milli-coil
+
+
+1.	% MILLI COIL Field calculation
+2.	for t= 1:10000
+
+3.	SS(t) =  (1e-7)*(integral(@(p) f(x(t),p,0.003815,1), 0, 2*pi,'ArrayValued', true) + integral(@(p) f(x(t),p,0.003302,1), 0, 2*pi,'ArrayValued', true) + integral(@(p) f(x(t),p,0.002794,1), 0, 2*pi,'ArrayValued', true) + integral(@(p) f(x(t),p,0.002286,1), 0, 2*pi,'ArrayValued', true) + integral(@(p) f(x(t),p,0.001778,1), 0, 2*pi,'ArrayValued', true)+integral(@(p) f(x(t),p,0.00127,1), 0, 2*pi,'ArrayValued', true) + integral(@(p) f(x(t),p,0.000762,1), 0, 2*pi,'ArrayValued', true));
+
+4.	end
+
+5.	xx=linspace(0,0.2,10000);
+6.	plot(xx,SS)
+
+7.	SS(179:198)=0;
+8.	SS(155:173)=0;
+9.	SS(131:148)=0;
+10.	SS(106:123)=0;
+11.	SS(82:98)=0;
+12.	SS(57:69)=0;
+13.	SS(34:44)=0;
+14.	plot(xx,SS)
+
+15.	FF=fliplr( -xx);
+16.	CC=cat(2 ,F,xx);
+17.	plot(CC,EE)
+
+18.	KK=abs(EE);
+19.	plot(CC,KK)
